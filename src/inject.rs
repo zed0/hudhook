@@ -45,6 +45,11 @@ impl Process {
         unsafe { get_process_by_name(name) }.map(Self)
     }
 
+    /// Open a specific process ID with the appropriate permissions.
+    pub fn by_pid(pid: &u32) -> Result<Self> {
+        unsafe { get_process_by_pid(pid) }.map(Self)
+    }
+
     /// Inject the DLL in the process.
     pub fn inject(&self, dll_path: PathBuf) -> Result<()> {
         let proc_addr =
@@ -207,4 +212,8 @@ unsafe fn get_process_by_name(name_str: &str) -> Result<HANDLE> {
     CloseHandle(snapshot)?;
 
     OpenProcess(PROCESS_ALL_ACCESS, false, pid)
+}
+
+unsafe fn get_process_by_pid(pid: &u32) -> Result<HANDLE> {
+    OpenProcess(PROCESS_ALL_ACCESS, false, *pid)
 }
