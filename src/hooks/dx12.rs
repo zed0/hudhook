@@ -953,16 +953,8 @@ unsafe extern "system" fn dxgi_factory_create_swap_chain_for_hwnd_impl(
     result
 }
 
-fn get_target_addrs() -> (
-    DXGIFactoryCreateSwapChainType,
-    DXGIFactoryCreateSwapChainForHwndType,
-    DXGISwapChainPresentType,
-    DXGISwapChainPresent1Type,
-    DXGISwapChainResizeBuffersType,
-    DXGISwapChainSetSourceSizeType,
-    DXGISwapChainResizeBuffers1Type,
-    D3D12CommandQueueExecuteCommandListsType,
-) {
+// The vtable slots of the functions to hook, from objects made for the purpose
+fn get_target_slots() -> [*mut *mut c_void; 8] {
     let dummy_hwnd = DummyHwnd::new();
 
     let factory: IDXGIFactory2 =
@@ -1018,33 +1010,16 @@ fn get_target_addrs() -> (
     let swap_chain2: IDXGISwapChain2 = swap_chain.cast().unwrap();
     let swap_chain3: IDXGISwapChain3 = swap_chain.cast().unwrap();
 
-    let create_swap_chain_ptr: DXGIFactoryCreateSwapChainType =
-        unsafe { mem::transmute(factory.vtable().base__.base__.CreateSwapChain) };
-    let create_swap_chain_for_hwnd_ptr: DXGIFactoryCreateSwapChainForHwndType =
-        unsafe { mem::transmute(factory.vtable().CreateSwapChainForHwnd) };
-    let present_ptr: DXGISwapChainPresentType =
-        unsafe { mem::transmute(swap_chain.vtable().Present) };
-    let present1_ptr: DXGISwapChainPresent1Type =
-        unsafe { mem::transmute(swap_chain3.vtable().base__.base__.Present1) };
-    let resize_buffers_ptr: DXGISwapChainResizeBuffersType =
-        unsafe { mem::transmute(swap_chain.vtable().ResizeBuffers) };
-    let set_source_size_ptr: DXGISwapChainSetSourceSizeType =
-        unsafe { mem::transmute(swap_chain2.vtable().SetSourceSize) };
-    let resize_buffers1_ptr: DXGISwapChainResizeBuffers1Type =
-        unsafe { mem::transmute(swap_chain3.vtable().ResizeBuffers1) };
-    let cqecl_ptr: D3D12CommandQueueExecuteCommandListsType =
-        unsafe { mem::transmute(command_queue.vtable().ExecuteCommandLists) };
-
-    (
-        create_swap_chain_ptr,
-        create_swap_chain_for_hwnd_ptr,
-        present_ptr,
-        present1_ptr,
-        resize_buffers_ptr,
-        set_source_size_ptr,
-        resize_buffers1_ptr,
-        cqecl_ptr,
-    )
+    [
+        util::vtable_slot(&factory.vtable().base__.base__.CreateSwapChain),
+        util::vtable_slot(&factory.vtable().CreateSwapChainForHwnd),
+        util::vtable_slot(&swap_chain.vtable().Present),
+        util::vtable_slot(&swap_chain3.vtable().base__.base__.Present1),
+        util::vtable_slot(&swap_chain.vtable().ResizeBuffers),
+        util::vtable_slot(&swap_chain2.vtable().SetSourceSize),
+        util::vtable_slot(&swap_chain3.vtable().ResizeBuffers1),
+        util::vtable_slot(&command_queue.vtable().ExecuteCommandLists),
+    ]
 }
 
 /// Hooks for DirectX 12.
@@ -1071,64 +1046,64 @@ impl ImguiDx12Hooks {
     where
         T: ImguiRenderLoop + Send + Sync + 'static,
     {
-        let (
-            dxgi_factory_create_swap_chain_addr,
-            dxgi_factory_create_swap_chain_for_hwnd_addr,
-            dxgi_swap_chain_present_addr,
-            dxgi_swap_chain_present1_addr,
-            dxgi_swap_chain_resize_buffers_addr,
-            dxgi_swap_chain_set_source_size_addr,
-            dxgi_swap_chain_resize_buffers1_addr,
-            d3d12_command_queue_execute_command_lists_addr,
-        ) = get_target_addrs();
+        let [
+            dxgi_factory_create_swap_chain_slot,
+            dxgi_factory_create_swap_chain_for_hwnd_slot,
+            dxgi_swap_chain_present_slot,
+            dxgi_swap_chain_present1_slot,
+            dxgi_swap_chain_resize_buffers_slot,
+            dxgi_swap_chain_set_source_size_slot,
+            dxgi_swap_chain_resize_buffers1_slot,
+            d3d12_command_queue_execute_command_lists_slot,
+        ] = get_target_slots();
 
         trace!(
             "IDXGIFactory::CreateSwapChain = {:p}",
-            dxgi_factory_create_swap_chain_addr as *const c_void
+            *dxgi_factory_create_swap_chain_slot
         );
-        let hook_create_swap_chain = MhHook::new(
-            dxgi_factory_create_swap_chain_addr as *mut _,
+        let hook_create_swap_chain = MhHook::new_for_slot(
+            dxgi_factory_create_swap_chain_slot,
             dxgi_factory_create_swap_chain_impl as *mut _,
         )
         .expect("couldn't create IDXGIFactory::CreateSwapChain hook");
         trace!(
             "IDXGIFactory2::CreateSwapChainForHwnd = {:p}",
-            dxgi_factory_create_swap_chain_for_hwnd_addr as *const c_void
+            *dxgi_factory_create_swap_chain_for_hwnd_slot
         );
-        let hook_create_swap_chain_for_hwnd = MhHook::new(
-            dxgi_factory_create_swap_chain_for_hwnd_addr as *mut _,
+        let hook_create_swap_chain_for_hwnd = MhHook::new_for_slot(
+            dxgi_factory_create_swap_chain_for_hwnd_slot,
             dxgi_factory_create_swap_chain_for_hwnd_impl as *mut _,
         )
         .expect("couldn't create IDXGIFactory2::CreateSwapChainForHwnd hook");
-        trace!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *const c_void);
-        let hook_present = MhHook::new(
-            dxgi_swap_chain_present_addr as *mut _,
+        trace!("IDXGISwapChain::Present = {:p}", *dxgi_swap_chain_present_slot);
+        let hook_present = MhHook::new_for_slot(
+            dxgi_swap_chain_present_slot,
             dxgi_swap_chain_present_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain::Present hook");
-        trace!("IDXGISwapChain1::Present1 = {:p}", dxgi_swap_chain_present1_addr as *const c_void);
-        let hook_present1 = MhHook::new(
-            dxgi_swap_chain_present1_addr as *mut _,
+        trace!("IDXGISwapChain1::Present1 = {:p}", *dxgi_swap_chain_present1_slot);
+        let hook_present1 = MhHook::new_for_slot(
+            dxgi_swap_chain_present1_slot,
             dxgi_swap_chain_present1_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain1::Present1 hook");
-        let hook_resize_buffers = MhHook::new(
-            dxgi_swap_chain_resize_buffers_addr as *mut _,
+        let hook_resize_buffers = MhHook::new_for_slot(
+            dxgi_swap_chain_resize_buffers_slot,
             dxgi_swap_chain_resize_buffers_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
-        let hook_set_source_size = MhHook::new(
-            dxgi_swap_chain_set_source_size_addr as *mut _,
+        let hook_set_source_size = MhHook::new_for_slot(
+            dxgi_swap_chain_set_source_size_slot,
             dxgi_swap_chain_set_source_size_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain2::SetSourceSize hook");
-        let hook_resize_buffers1 = MhHook::new(
-            dxgi_swap_chain_resize_buffers1_addr as *mut _,
+        let hook_resize_buffers1 = MhHook::new_for_slot(
+            dxgi_swap_chain_resize_buffers1_slot,
             dxgi_swap_chain_resize_buffers1_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain3::ResizeBuffers1 hook");
-        let hook_cqecl = MhHook::new(
-            d3d12_command_queue_execute_command_lists_addr as *mut _,
+        let hook_cqecl = MhHook::new_for_slot(
+            d3d12_command_queue_execute_command_lists_slot,
             d3d12_command_queue_execute_command_lists_impl as *mut _,
         )
         .expect("couldn't create ID3D12CommandQueue::ExecuteCommandLists hook");

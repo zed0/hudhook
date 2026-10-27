@@ -138,6 +138,7 @@ pub mod hooks;
 #[cfg(feature = "inject")]
 pub mod inject;
 pub mod mh;
+pub use mh::HookMethod;
 pub(crate) mod renderer;
 
 pub use renderer::msg_filter::MessageFilter;
@@ -454,6 +455,13 @@ impl Hudhook {
 pub struct HudhookBuilder(Hudhook);
 
 impl HudhookBuilder {
+    /// Set how the hooks added after this are put in place (by default
+    /// [`HookMethod::Inline`]): call it before [`with`](Self::with).
+    pub fn with_hook_method(self, method: HookMethod) -> Self {
+        mh::set_hook_method(method);
+        self
+    }
+
     /// Add a hook object.
     pub fn with<T: Hooks + 'static>(
         mut self,

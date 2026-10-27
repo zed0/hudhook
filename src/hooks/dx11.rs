@@ -23,14 +23,16 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    IDXGISwapChain, DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
+    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
 use super::DummyHwnd;
 use crate::mh::MhHook;
 use crate::renderer::{D3D11RenderEngine, Pipeline};
-use crate::{perform_eject, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
+use crate::{
+    perform_eject, util, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER,
+};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(this: IDXGISwapChain, sync_interval: u32, flags: u32) -> HRESULT;
@@ -146,7 +148,8 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
     result
 }
 
-fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
+// The vtable slots of the functions to hook, from a swap chain made for the purpose
+fn get_target_slots() -> (*mut *mut c_void, *mut *mut c_void) {
     let mut p_device: Option<ID3D11Device> = None;
     let mut p_context: Option<ID3D11DeviceContext> = None;
     let mut p_swap_chain: Option<IDXGISwapChain> = None;
@@ -184,21 +187,9 @@ fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     }
 
     let swap_chain = p_swap_chain.unwrap();
+    let vtable = swap_chain.vtable();
 
-    let present_ptr: DXGISwapChainPresentType = unsafe {
-        mem::transmute::<
-            unsafe extern "system" fn(*mut c_void, u32, DXGI_PRESENT) -> HRESULT,
-            DXGISwapChainPresentType,
-        >(swap_chain.vtable().Present)
-    };
-
-    let resize_buffers_ptr: DXGISwapChainResizeBuffersType = unsafe {
-        mem::transmute::<*mut c_void, DXGISwapChainResizeBuffersType>(
-            swap_chain.vtable().ResizeBuffers as *mut c_void,
-        )
-    };
-
-    (present_ptr, resize_buffers_ptr)
+    (util::vtable_slot(&vtable.Present), util::vtable_slot(&vtable.ResizeBuffers))
 }
 
 /// Hooks for DirectX 11.
@@ -219,22 +210,19 @@ impl ImguiDx11Hooks {
     where
         T: ImguiRenderLoop + Send + Sync + 'static,
     {
-        let (dxgi_swap_chain_present_addr, dxgi_swap_chain_resize_buffers_addr) =
-            get_target_addrs();
+        let (dxgi_swap_chain_present_slot, dxgi_swap_chain_resize_buffers_slot) =
+            get_target_slots();
 
-        trace!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *const c_void);
-        let hook_present = MhHook::new(
-            dxgi_swap_chain_present_addr as *mut _,
+        trace!("IDXGISwapChain::Present = {:p}", *dxgi_swap_chain_present_slot);
+        let hook_present = MhHook::new_for_slot(
+            dxgi_swap_chain_present_slot,
             dxgi_swap_chain_present_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain::Present hook");
 
-        trace!(
-            "IDXGISwapChain::ResizeBuffers = {:p}",
-            dxgi_swap_chain_resize_buffers_addr as *const c_void
-        );
-        let hook_resize_buffers = MhHook::new(
-            dxgi_swap_chain_resize_buffers_addr as *mut _,
+        trace!("IDXGISwapChain::ResizeBuffers = {:p}", *dxgi_swap_chain_resize_buffers_slot);
+        let hook_resize_buffers = MhHook::new_for_slot(
+            dxgi_swap_chain_resize_buffers_slot,
             dxgi_swap_chain_resize_buffers_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");

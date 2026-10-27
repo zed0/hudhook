@@ -355,6 +355,13 @@ pub unsafe fn readable_region<T>(ptr: *const T, limit: usize) -> &'static [T] {
     std::slice::from_raw_parts(ptr, limit)
 }
 
+/// Where a function pointer is in a vtable, given a reference to it in the
+/// vtable (e.g. `&swap_chain.vtable().Present`), for
+/// [`MhHook::new_for_slot`](crate::mh::MhHook::new_for_slot).
+pub fn vtable_slot<T>(entry: &T) -> *mut *mut c_void {
+    entry as *const T as *mut *mut c_void
+}
+
 /// Implements a barrier to coordinate ejection of hooks
 ///
 /// # Usave
