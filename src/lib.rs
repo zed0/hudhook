@@ -434,7 +434,7 @@ impl Hudhook {
 ///     hmodule: HINSTANCE,
 ///     reason: u32,
 ///     _: *mut std::ffi::c_void,
-/// ) {
+/// ) -> i32 {
 ///     if reason == DLL_PROCESS_ATTACH {
 ///         let hmodule_raw = hmodule.0 as usize;
 ///         std::thread::spawn(move || {
@@ -446,6 +446,10 @@ impl Hudhook {
 ///             hooks.apply();
 ///         });
 ///     }
+///     // DllMain returns a BOOL: without one the loader reads whatever is left in the
+///     // return register, and if that happens to be 0 it unloads the DLL again, while
+///     // the thread started above is still to run.
+///     1
 /// }
 pub struct HudhookBuilder(Hudhook);
 
@@ -501,7 +505,7 @@ macro_rules! hudhook {
             hmodule: ::hudhook::windows::Win32::Foundation::HINSTANCE,
             reason: u32,
             _: *mut ::std::ffi::c_void,
-        ) {
+        ) -> i32 {
             use ::hudhook::*;
 
             if reason == ::hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
@@ -521,6 +525,11 @@ macro_rules! hudhook {
                     }
                 });
             }
+
+            // DllMain returns a BOOL: without one the loader reads whatever is left in the
+            // return register, and if that happens to be 0 it unloads the DLL again, while
+            // the thread started above is still to run.
+            1
         }
     };
 }
