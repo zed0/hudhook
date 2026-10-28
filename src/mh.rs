@@ -4,7 +4,7 @@
 use std::ffi::c_void;
 use std::mem;
 use std::ptr::null_mut;
-use std::sync::atomic::{AtomicPtr, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use tracing::{error, warn};
 use windows::Win32::System::Memory::{VirtualProtect, PAGE_PROTECTION_FLAGS, PAGE_READWRITE};
@@ -95,16 +95,16 @@ pub enum HookMethod {
     VTable,
 }
 
-static HOOK_METHOD: AtomicU8 = AtomicU8::new(HookMethod::Inline as u8);
+static VTABLE_HOOKS: AtomicBool = AtomicBool::new(false);
 
 /// Set how hooks made from now on are put in place.
 pub fn set_hook_method(method: HookMethod) {
-    HOOK_METHOD.store(method as u8, Ordering::SeqCst);
+    VTABLE_HOOKS.store(method == HookMethod::VTable, Ordering::SeqCst);
 }
 
 /// How hooks made from now on are put in place.
 pub fn hook_method() -> HookMethod {
-    if HOOK_METHOD.load(Ordering::SeqCst) == HookMethod::VTable as u8 {
+    if VTABLE_HOOKS.load(Ordering::SeqCst) {
         HookMethod::VTable
     } else {
         HookMethod::Inline
@@ -203,8 +203,7 @@ unsafe fn write_slot(
         error!("Couldn't make vtable slot {slot:p} writable");
         return Err(MH_STATUS::MH_ERROR_MEMORY_PROTECT);
     }
-    let previous =
-        (*(slot as *const AtomicPtr<c_void>)).swap(to, Ordering::SeqCst);
+    let previous = AtomicPtr::from_ptr(slot).swap(to, Ordering::SeqCst);
     if previous != from {
         warn!("Vtable slot {slot:p} was {previous:p}, not {from:p}; replaced it with {to:p}");
     }

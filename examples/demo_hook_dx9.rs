@@ -30,8 +30,6 @@ pub unsafe extern "system" fn DllMain(
             }
         });
     }
-    // DllMain returns a BOOL: without one the loader reads whatever is left in the
-    // return register, and if that happens to be 0 it unloads the DLL again, while
-    // the thread started above is still to run.
+    // TRUE: 0 would have the loader unload the DLL, with the thread above still to run
     1
 }

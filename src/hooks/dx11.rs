@@ -149,7 +149,7 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
 }
 
 // The vtable slots of the functions to hook, from a swap chain made for the purpose
-fn get_target_slots() -> (*mut *mut c_void, *mut *mut c_void) {
+fn get_target_slots() -> [*mut *mut c_void; 2] {
     let mut p_device: Option<ID3D11Device> = None;
     let mut p_context: Option<ID3D11DeviceContext> = None;
     let mut p_swap_chain: Option<IDXGISwapChain> = None;
@@ -189,7 +189,7 @@ fn get_target_slots() -> (*mut *mut c_void, *mut *mut c_void) {
     let swap_chain = p_swap_chain.unwrap();
     let vtable = swap_chain.vtable();
 
-    (util::vtable_slot(&vtable.Present), util::vtable_slot(&vtable.ResizeBuffers))
+    [util::vtable_slot(&vtable.Present), util::vtable_slot(&vtable.ResizeBuffers)]
 }
 
 /// Hooks for DirectX 11.
@@ -210,8 +210,7 @@ impl ImguiDx11Hooks {
     where
         T: ImguiRenderLoop + Send + Sync + 'static,
     {
-        let (dxgi_swap_chain_present_slot, dxgi_swap_chain_resize_buffers_slot) =
-            get_target_slots();
+        let [dxgi_swap_chain_present_slot, dxgi_swap_chain_resize_buffers_slot] = get_target_slots();
 
         trace!("IDXGISwapChain::Present = {:p}", *dxgi_swap_chain_present_slot);
         let hook_present = MhHook::new_for_slot(
